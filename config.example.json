@@ -1,4 +1,6 @@
 {
     "usb_device": "E:/",
-    "tx_rx_mode": "tx"
+    "tx_rx_mode": "tx",
+    "address": "1Node",
+    "channel": 76
 }
