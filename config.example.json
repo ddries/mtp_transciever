@@ -2,5 +2,6 @@
     "usb_device": "E:/",
     "tx_rx_mode": "tx",
     "address": "1Node",
-    "channel": 76
+    "channel": 76,
+    "compression": true
 }
