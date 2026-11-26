@@ -52,11 +52,12 @@ def main():
 
     log(f"Radio ready on address {address}, channel {channel}")
 
-    if tx_rx_mode == "tx":
-        send_file(radio, file)
-    else:
-        receive_file(radio, file)
+    try:
+        if tx_rx_mode == "tx":
+            return send_file(radio, file, compression=config.get("compression", True))
+        return receive_file(radio, file)
+    finally:
+        radio.power = False
 
-    radio.power = False
-
-main()
+if __name__ == "__main__":
+    raise SystemExit(0 if main() else 1)
