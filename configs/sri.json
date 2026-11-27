@@ -3,7 +3,7 @@
     "usb_device": "/mnt/usb",
     "address": "TeamC",
     "channel": 74,
-    "data_rate": "250k",
+    "data_rate": "2m",
     "pa_level": "min",
     "compression": true,
     "spi_hz": 4000000

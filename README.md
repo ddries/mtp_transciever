@@ -29,7 +29,7 @@ between runs: choose the mode and this box's role. `--usb /some/folder` uses ano
 | Mode | Protocol | Radio profile (default) |
 |---|---|---|
 | `qm` Quick Mode | point to point, one file | channel 74, 250 kbps, PA min (10 mW e.i.r.p.) |
-| `sri` Short Range Individual | same as QM | same as QM |
+| `sri` Short Range Individual | same as QM | channel 74, **2 Mbps**, PA min (shorter airtime; ~10 dB less sensitivity than 250 kbps) |
 | `mrm` Mid Range Multiple | same as QM for now | same as QM: the 10 mW fixed-channel fallback. Frequency hopping at 20 dBm (the plan, D-R6) is not written yet |
 | `nm` Network Mode | NMP-1: broadcast, relay, repair by HAVE bitmaps | NMP-1: channel 79, 1 Mbps, no auto-ACK; PA min |
 

@@ -85,10 +85,13 @@ class Launcher(unittest.TestCase):
                 self.assertEqual(config["usb_device"], "/mnt/usb")
                 self.assertEqual(config["pa_level"], "min")      # 10 mW e.i.r.p. on a fixed channel
                 self.assertNotIn("tx_rx_mode", config)           # the role belongs to the box
-        for mode in ("qm", "sri", "mrm"):
+        for mode, rate in (("qm", "250k"), ("sri", "2m"), ("mrm", "250k")):
             config = json.loads((main.CONFIGS / f"{mode}.json").read_text())
             self.assertEqual((config["channel"], config["data_rate"], config["address"]),
-                             (74, "250k", "TeamC"))
+                             (74, rate, "TeamC"))
+            # the mode file and the code profile agree
+            module = {"qm": qm, "sri": sri, "mrm": mrm}[mode]
+            self.assertEqual({k: config[k] for k in module.PROFILE}, module.PROFILE)
 
     def test_mode_file_plus_role(self):
         ok, (mode, config) = self.launch("--mode", "sri", "--role", "rx",
@@ -139,9 +142,9 @@ class PointToPointModes(unittest.TestCase):
 
     def test_profiles(self):
         # address, channel, pa_level, data_rate, spi_hz
-        for module in (qm, sri, mrm):
+        for module, rate in ((qm, "250k"), (sri, "2m"), (mrm, "250k")):
             with self.subTest(mode=module.__name__):
-                self.assertEqual(self.run_mode(module), ("1Node", 74, "min", "250k", 4_000_000))
+                self.assertEqual(self.run_mode(module), ("1Node", 74, "min", rate, 4_000_000))
 
     def test_receiver_writes_the_named_file(self):
         stick = Path(self.enterContext(tempfile.TemporaryDirectory()))
