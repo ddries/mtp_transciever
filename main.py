@@ -46,6 +46,11 @@ def main():
         log(f"data_rate must be one of {', '.join(DATA_RATES)}")
         return
 
+    compression = config.get("compression", True)
+    if not isinstance(compression, bool):
+        log('compression must be true or false (without quotes) in config.json')
+        return
+
     spi_hz = config.get("spi_hz", DEFAULT_SPI_HZ)
 
     log(f"Requested USB device {usb_device}")
@@ -74,7 +79,7 @@ def main():
 
     try:
         if tx_rx_mode == "tx":
-            return send_file(radio, file, compression=config.get("compression", True))
+            return send_file(radio, file, compression=compression)
         return receive_file(radio, file)
     finally:
         radio.power = False

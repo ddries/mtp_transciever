@@ -12,7 +12,14 @@ from logger import log
 
 CE_PIN = 22      # Pi header pin 15
 CSN_PIN = 0      # /dev/spidev0.0, CSN = GPIO 8 (header pin 24)
-MAX_RETRIES = 50
+# Timing. The radio ACKs each packet in hardware (15 retries, 1.5 ms apart); on top of that the
+# transmitter keeps trying one packet until SEND_TIMEOUT_S, so a person walking between the boxes
+# does not end the transfer. The receiver gives up after RECEIVE_TIMEOUT_S without a valid packet
+# (longer than SEND_TIMEOUT_S, so it never quits first), and after the last packet it keeps
+# listening for LINGER_S so the hardware can ACK a retransmission of it.
+SEND_TIMEOUT_S = 30.0
+RECEIVE_TIMEOUT_S = 35.0
+LINGER_S = 0.5
 
 # Ebyte E01-ML01SP4: a PA after the nRF24 (~+20..25 dB, measured in T0). On one fixed channel
 # the limit is 10 mW e.i.r.p. (CNAF UN-85 b), so over the air only "min" (-18 dBm chip) is legal.
@@ -48,11 +55,13 @@ def setup_radio(address: str, channel: int, pa_level: str = "min",
     return radio
 
 def send_packet(radio: RF24, packet: bytes) -> bool:
-    for _ in range(MAX_RETRIES):
+    deadline = time.monotonic() + SEND_TIMEOUT_S
+    while True:
         if radio.write(packet):
             return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(0.01)
-    return False
 
 def send_file(radio: RF24, file: Path, compression: bool = True) -> bool:
     data = file.read_bytes()
@@ -91,8 +100,16 @@ def receive_file(radio: RF24, file: Path) -> bool:
     expected = None
     compressed = False
     data = bytearray()
+    last_valid = 0.0
     while expected is None or expected >= 0:
         if not radio.available():
+            # Before the first packet wait as long as needed; after it, a transmitter that gave up
+            # or a packet we could not accept must not leave us waiting forever.
+            if expected is not None and time.monotonic() - last_valid > RECEIVE_TIMEOUT_S:
+                log(f"No valid packet for {RECEIVE_TIMEOUT_S:.0f} s with {expected + 1} packets "
+                    "missing, giving up")
+                radio.stop_listening()
+                return False
             continue
 
         packet = radio.read(radio.get_dynamic_payload_size())
@@ -119,7 +136,14 @@ def receive_file(radio: RF24, file: Path) -> bool:
 
         data += packet[HEADER.size:]
         expected -= 1
+        last_valid = time.monotonic()
 
+    # If the ACK of the last packet was lost the transmitter sends it again: stay in RX mode for a
+    # moment so the hardware ACKs it, and drop the copies.
+    linger_end = time.monotonic() + LINGER_S
+    while time.monotonic() < linger_end:
+        if radio.available():
+            radio.read(radio.get_dynamic_payload_size())
     radio.stop_listening()
     try:
         size = save_payload(file, data, compressed)

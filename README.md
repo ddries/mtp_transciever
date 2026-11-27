@@ -42,19 +42,29 @@ For example,
 
 In RX mode the received file is saved as `output.txt` in the USB device.
 
-The transmitter tries zlib compression on the original file bytes by default.
-It sends compressed data only when that reduces the payload size. The receiver
-automatically decodes it and checks the zlib checksum before replacing
-`output.txt`. This preserves binary data, text encodings and line endings.
+The transmitter compresses the original file bytes with zlib by default. When
+that does not make the data smaller (random or already-compressed files, tiny or
+empty files) it still sends a zlib stream, made of stored blocks (level 0,
+11 bytes more). So every transfer carries the zlib Adler-32 checksum. The
+receiver decodes the stream and checks it before replacing `output.txt`: a
+corrupted, truncated or spliced transfer is rejected and the old `output.txt`
+stays. This preserves binary data, text encodings and line endings.
 
 For compressed transfers, update both radios. To send to an older receiver,
-set `"compression": false` on the transmitter. The updated receiver also accepts
-ordinary raw transfers from older transmitters.
+set `"compression": false` on the transmitter (a JSON boolean, without quotes):
+that sends raw bytes, which have no end-to-end check. The updated receiver also
+accepts raw transfers from older transmitters.
 
 Each packet still carries up to 28 data bytes after a four-byte big-endian
 header. Bit 31 is set in every packet of a compressed transfer. The low 31
-bits count the packets remaining after this one. An empty file uses one raw
-packet with a zero count.
+bits count the packets remaining after this one.
+
+Timing (`radio.py`): the transmitter keeps retrying one packet for up to 30 s
+(`SEND_TIMEOUT_S`) before it gives up, so a person walking between the boxes does
+not end the transfer. Once a transfer has started, the receiver gives up after
+35 s without a valid packet (`RECEIVE_TIMEOUT_S`) instead of waiting forever. After
+the last packet it keeps listening for 0.5 s, so a retransmitted last packet is
+still ACKed.
 
 Run the transciever,
 
@@ -69,7 +79,7 @@ Wiring, breakout J1 (pin 1 = square pad) to the Pi header:
 | J1 | Signal | Pi header pin (BCM) |
 |---|---|---|
 | 1 | GND | 6 (any GND), also the 3.3 V supply's GND |
-| 2 | VCC | **3.3 V bench supply or LDO, >= 150 mA** (or the J2 bench pins); not the Pi's 3V3 pin |
+| 2 | VCC | 3.3 V: the Pi's pin 1 is fine at PA `min` (bench tests); a 3.3 V supply >= 150 mA above that. Never pin 17 (next to CE) |
 | 3 | CE | 15 (GPIO 22) |
 | 4 | CSN | 24 (GPIO 8, SPI0 CE0) |
 | 5 | SCK | 23 (GPIO 11) |
@@ -78,23 +88,30 @@ Wiring, breakout J1 (pin 1 = square pad) to the Pi header:
 | 8 | IRQ | 18 (GPIO 24), not used by this program |
 
 The SP4's PA draws ~120 mA in bursts; never feed it more than 3.6 V. Antenna (or pigtail) on the IPEX
-plug before powering it.
+plug before powering it. After soldering a breakout, beep every neighbouring pair of J1 pins with the power
+off: none may beep. (27-Nov: a CE-CSN bridge on C1 made CE follow CSN, so the radio never sent or received.)
 
-On the Pi (SPI already enabled on our boxes, Python 3.13 has a ready pyrf24 wheel):
+On the Pi (SPI already enabled on our boxes, Python 3.13 has a ready pyrf24 wheel; our two Pis have the
+venv in `.venv` inside the repo):
 
 ```sh
-$ python3 -m venv ~/venv && ~/venv/bin/pip install -r requirements.txt
+$ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 $ ls /dev/spidev0.0
-$ ~/venv/bin/python -m unittest tests/test_transfer.py
+$ .venv/bin/python -m unittest tests/test_transfer.py tests/test_usb.py
 ```
 
-Our Pis boot without a desktop, so a USB stick is not mounted on its own:
+Our Pis boot without a desktop, so a USB stick is not mounted on its own. `udisksctl` works on the Pi's
+own console but is refused over SSH; there use `sudo mount`. Some sticks have no partition table: then
+the file system is on `/dev/sda`, not `/dev/sda1` (`lsblk` shows `vfat` on the line that has it).
 
 ```sh
-$ lsblk                                   # find the stick, e.g. sda1
-$ udisksctl mount -b /dev/sda1            # mounts at /media/$USER/<label>
-$ udisksctl unmount -b /dev/sda1          # before pulling it out
+$ lsblk -o NAME,SIZE,FSTYPE,LABEL         # find the stick: sda1, or sda itself
+$ sudo mount -o uid=$(id -u),gid=$(id -g),umask=022 /dev/sda1 /mnt/usb
+$ sync; sudo umount /mnt/usb              # before pulling it out
 ```
 
-Start the receiver first: the transmitter gives up on the first packet after ~2 s.
-Run the tests with `python -m unittest tests/test_transfer.py` (plain `python -m unittest` finds none).
+The transmitter sends the largest `.txt` at the top of `usb_device` (it skips `desktop.ini`, `~$` Office lock
+files and macOS `._` files). The receiver writes `output.txt` into `usb_device` and replaces one that is there.
+
+Start the receiver first (the transmitter waits up to 30 s for the first ACK).
+Plain `python -m unittest` finds no tests: name the files as above.

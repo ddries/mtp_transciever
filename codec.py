@@ -1,14 +1,19 @@
+import os
 import tempfile
 import zlib
 from pathlib import Path
 
 
 def encode_payload(data: bytes, compression: bool) -> tuple[bytes, bool]:
-    if compression and data:
-        encoded = zlib.compress(data)
-        if len(encoded) < len(data):
-            return encoded, True
-    return data, False
+    """With compression on, always send a zlib stream: its Adler-32 lets the receiver reject a
+    corrupted, truncated or spliced file. Data that does not shrink goes as stored blocks
+    (level 0, 11 bytes more). Raw is only for compression off (old receivers)."""
+    if not compression:
+        return data, False
+    encoded = zlib.compress(data, 6)
+    if len(encoded) >= len(data):
+        encoded = zlib.compress(data, 0)
+    return encoded, True
 
 
 def save_payload(file: Path, payload: bytearray, compressed: bool) -> int:
@@ -29,5 +34,7 @@ def save_payload(file: Path, payload: bytearray, compressed: bool) -> int:
             else:
                 output.write(payload)
             size = output.tell()
+            output.flush()
+            os.fsync(output.fileno())  # the data is on the stick before the rename makes it visible
         pending.replace(file)
     return size
