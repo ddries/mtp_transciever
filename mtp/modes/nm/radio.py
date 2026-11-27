@@ -22,7 +22,7 @@ AUTO_ACK = AUTO_RETRANSMIT = DYNAMIC_PAYLOAD = False
 class NRF24Radio:
     """CE usa numeración BCM; CSN es 10 * bus SPI + chip select con SPIDEV."""
 
-    def __init__(self, ce, csn, pa_level):
+    def __init__(self, ce, csn, pa_level, spi_speed=None):
         if sys.platform != "linux":
             raise RuntimeError("La radio nRF24 requiere Linux en la Raspberry Pi; en este PC usa --radio udp")
         try:
@@ -35,7 +35,8 @@ class NRF24Radio:
                   "high": pyrf24.RF24_PA_HIGH, "max": pyrf24.RF24_PA_MAX}
         if pa_level not in levels:
             raise ValueError("Potencia inválida: usa min, low, high o max según el módulo")
-        self.device = pyrf24.RF24(ce, csn)
+        # spi_speed en Hz; None deja el valor de pyrf24 (10 MHz). Team C usa 4 MHz con cables.
+        self.device = pyrf24.RF24(ce, csn) if spi_speed is None else pyrf24.RF24(ce, csn, spi_speed)
         self.tx_ds = int(pyrf24.RF24_TX_DS)
         self.tx_df = int(pyrf24.RF24_TX_DF)
         self.listening = self.sending = False

@@ -1,3 +1,6 @@
+"""Point-to-point file transfer (QM, SRI, MRM): one transmitter reads the stick, one receiver
+writes output.txt. Enhanced ShockBurst with hardware ACK; see README.md for the packet format."""
+
 import os
 import struct
 import time
@@ -7,11 +10,11 @@ from pathlib import Path
 from pyrf24 import (RF24, RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX,
                     RF24_250KBPS, RF24_1MBPS, RF24_2MBPS)
 
-from codec import encode_payload, save_payload
-from logger import log
+from .codec import encode_payload, save_payload
+from .hardware import CE_PIN, CSN_PIN, DEFAULT_SPI_HZ, LEGAL_FIXED_CHANNEL_PA, MAX_CHANNEL
+from .logger import log
+from .usb import read_file_from_usb
 
-CE_PIN = 22      # Pi header pin 15
-CSN_PIN = 0      # /dev/spidev0.0, CSN = GPIO 8 (header pin 24)
 # Timing. The radio ACKs each packet in hardware (15 retries, 1.5 ms apart); on top of that the
 # transmitter keeps trying one packet until SEND_TIMEOUT_S, so a person walking between the boxes
 # does not end the transfer. The receiver gives up after RECEIVE_TIMEOUT_S without a valid packet
@@ -21,13 +24,8 @@ SEND_TIMEOUT_S = 30.0
 RECEIVE_TIMEOUT_S = 35.0
 LINGER_S = 0.5
 
-# Ebyte E01-ML01SP4: a PA after the nRF24 (~+20..25 dB, measured in T0). On one fixed channel
-# the limit is 10 mW e.i.r.p. (CNAF UN-85 b), so over the air only "min" (-18 dBm chip) is legal.
-# "low"/"high"/"max" are for a pigtail into a >= 30 dB attenuator only.
 PA_LEVELS = {"min": RF24_PA_MIN, "low": RF24_PA_LOW, "high": RF24_PA_HIGH, "max": RF24_PA_MAX}
 DATA_RATES = {"250k": RF24_250KBPS, "1m": RF24_1MBPS, "2m": RF24_2MBPS}
-MAX_CHANNEL = 83            # 2400 + 83 MHz; higher channels leave the 2400-2483.5 MHz band
-DEFAULT_SPI_HZ = 4_000_000  # pyrf24 defaults to 10 MHz; jumper wires to the breakout want less
 
 # The high bit marks a zlib stream. The other 31 bits count packets left.
 PAYLOAD_SIZE = 32
@@ -153,3 +151,74 @@ def receive_file(radio: RF24, file: Path) -> bool:
     os.sync()  # the stick may be pulled right after this; don't leave the file in the page cache
     log(f"Saved {size} bytes to {file}")
     return True
+
+def run(config: dict, profile: dict, name: str) -> bool:
+    """One transfer with the mode's radio profile; keys in config.json override the profile."""
+    settings = {**profile, **{k: config[k] for k in profile if k in config}}
+
+    usb_device = config.get("usb_device", "")
+    if not usb_device:
+        log("USB device is required in config.json")
+        return False
+
+    tx_rx_mode = config.get("tx_rx_mode", "")
+    if tx_rx_mode not in ("tx", "rx"):
+        log("tx_rx_mode must be tx or rx in config.json")
+        return False
+
+    address = config.get("address", "")
+    if len(address) != 5:
+        log("A 5 character address is required in config.json")
+        return False
+
+    channel = settings["channel"]
+    if not isinstance(channel, int) or not 0 <= channel <= MAX_CHANNEL:
+        log(f"channel must be 0-{MAX_CHANNEL} (2400-{2400 + MAX_CHANNEL} MHz)")
+        return False
+
+    pa_level = settings["pa_level"]
+    if pa_level not in PA_LEVELS:
+        log(f"pa_level must be one of {', '.join(PA_LEVELS)}")
+        return False
+    if pa_level != LEGAL_FIXED_CHANNEL_PA:
+        log(f"WARNING: pa_level {pa_level} is over 10 mW e.i.r.p. with the SP4 on a fixed channel: "
+            "use it only into an attenuator")
+
+    data_rate = settings["data_rate"]
+    if data_rate not in DATA_RATES:
+        log(f"data_rate must be one of {', '.join(DATA_RATES)}")
+        return False
+
+    compression = config.get("compression", True)
+    if not isinstance(compression, bool):
+        log("compression must be true or false (without quotes) in config.json")
+        return False
+
+    spi_hz = config.get("spi_hz", DEFAULT_SPI_HZ)
+
+    log(f"{name}: {tx_rx_mode.upper()} with USB device {usb_device}")
+
+    if tx_rx_mode == "tx":
+        # The largest .txt on the stick (usb.py skips Windows/macOS leftovers)
+        file = read_file_from_usb(usb_device)
+        if not file:
+            log("The given USB device is empty")
+            return False
+        log(f"Successfully read file {file.name} ({file.stat().st_size} bytes)")
+    else:
+        file = Path(usb_device) / "output.txt"
+
+    radio = setup_radio(address, channel, pa_level, data_rate, spi_hz)
+    if not radio:
+        log("nRF24L01 is not responding, check the wiring")
+        return False
+
+    log(f"Radio ready on address {address}, channel {channel}, {data_rate}bps, "
+        f"PA {pa_level}, SPI {spi_hz // 1000} kHz")
+
+    try:
+        if tx_rx_mode == "tx":
+            return send_file(radio, file, compression=compression)
+        return receive_file(radio, file)
+    finally:
+        radio.power = False

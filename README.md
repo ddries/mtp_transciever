@@ -1,46 +1,52 @@
 # mtp_transciever
 
-Use latest Python version (+3.15).
+MTP F26 Team C: one program for every competition mode, on a Raspberry Pi 3 A+ with an Ebyte
+E01-ML01SP4 (nRF24L01+ with PA/LNA) on the SP4 breakout. Python 3.13 on the Pi (3.11 or newer).
 
 ```sh
-$ python --version
-Python 3.15.1
+$ python main.py                 # mode from config.json ("mode", default qm)
+$ python main.py --mode nm       # or choose it on the command line
 ```
 
-Install the required libraries:
+## Layout
 
-```sh
-$ python -m pip install -r requirements.txt
-```
+| Path | What |
+|---|---|
+| `main.py` | Launcher: reads `config.json`, picks the mode, runs it |
+| `mtp/hardware.py` | How the breakout is wired (CE GPIO 22, CSN spidev0.0), SPI speed, legal PA level |
+| `mtp/usb.py` | Picks the file to send on the stick (largest `.txt`, skips Windows/macOS leftovers) |
+| `mtp/codec.py` | zlib stream out, checked inflate and safe save of `output.txt` |
+| `mtp/p2p.py` | Point-to-point transfer with hardware ACK (QM, SRI, MRM) |
+| `mtp/modes/qm.py`, `sri.py`, `mrm.py` | One file per mode: its radio profile, then `p2p.run` |
+| `mtp/modes/nm/` | Network Mode, NMP-1, from `sofiavaleero/MTP-Protocol-NM` (its own README, in Spanish) |
+| `tests/` | `test_transfer`, `test_usb`, `test_modes`, `test_nmp` (no hardware needed) |
 
-Copy `config.example.json` and remove `.example`: config.example.json -> config.json.
-Then, populate configuration. `usb_device` needs to be the name of your USB drive in your computer, e.g.,
-- `E:/` under Windows,
-- `/Volumes/<USB Name>` under macOS,
-- `/media/mtp_team-c2/<USB Name>` in Raspberry Pi.
+| Mode | Protocol | Radio profile (default) |
+|---|---|---|
+| `qm` Quick Mode | point to point, one file | channel 74, 250 kbps, PA min (10 mW e.i.r.p.) |
+| `sri` Short Range Individual | same as QM | same as QM |
+| `mrm` Mid Range Multiple | same as QM for now | same as QM: the 10 mW fixed-channel fallback. Frequency hopping at 20 dBm (the plan, D-R6) is not written yet |
+| `nm` Network Mode | NMP-1: broadcast, relay, repair by HAVE bitmaps | NMP-1: channel 79, 1 Mbps, no auto-ACK; PA min |
 
-`address` is the 5 character address of the link, the TX and the RX need to use the same one.
-`channel` is optional (0-83, default 76; 2400 + channel MHz, higher channels are outside the band).
-`pa_level` is optional (`min`, `low`, `high`, `max`; default `min`). With the Ebyte E01-ML01SP4 only `min`
-stays under 10 mW e.i.r.p. on a fixed channel; the others are for a pigtail into an attenuator only.
-`data_rate` is optional (`250k`, `1m`, `2m`; default `250k`, the best sensitivity). Both radios must match.
-`spi_hz` is optional (default 4000000; pyrf24's own default is 10 MHz, too fast for jumper wires).
+To add or change a mode, edit its file in `mtp/modes/`; shared code stays in `mtp/`.
 
-For example,
+## Configuration
 
-```json
-{
-    "usb_device": "/Volumes/USB2",
-    "tx_rx_mode": "tx",
-    "address": "1Node",
-    "channel": 76,
-    "compression": true,
-    "pa_level": "min",
-    "data_rate": "250k"
-}
-```
+Install the libraries (`python -m pip install -r requirements.txt`), copy `config.example.json` to
+`config.json` and fill it in:
 
-In RX mode the received file is saved as `output.txt` in the USB device.
+| Key | Meaning |
+|---|---|
+| `mode` | `qm`, `sri`, `mrm` or `nm` (default `qm`); `--mode` overrides it |
+| `usb_device` | The stick's folder: `/mnt/usb` on our Pis, `E:/` on Windows, `/Volumes/<name>` on macOS |
+| `tx_rx_mode` | `tx` sends the stick's file (in NM: the source node); `rx` receives (in NM: a relay node) |
+| `address` | QM/SRI/MRM: the 5-character link address, the same on both boxes (NM has its own) |
+| `compression` | `true` (default) or `false`, a JSON boolean |
+| `spi_hz` | SPI clock, default 4000000 (pyrf24's own 10 MHz is too fast for jumper wires) |
+| `channel`, `data_rate`, `pa_level` | Optional overrides of the mode's profile (QM/SRI/MRM; NM takes only `pa_level`). Channel 0-83, `250k`/`1m`/`2m`, `min`/`low`/`high`/`max`. With the SP4 only `min` stays under 10 mW e.i.r.p. on a fixed channel; the others are for a pigtail into an attenuator only. Both boxes must match |
+
+In RX mode the received file is saved as `output.txt` in the USB device. In NM every node writes
+`output.txt` at STOP (Ctrl+C or SIGTERM) if its copy is complete and its CRC-32 checks.
 
 The transmitter compresses the original file bytes with zlib by default. When
 that does not make the data smaller (random or already-compressed files, tiny or
@@ -59,18 +65,12 @@ Each packet still carries up to 28 data bytes after a four-byte big-endian
 header. Bit 31 is set in every packet of a compressed transfer. The low 31
 bits count the packets remaining after this one.
 
-Timing (`radio.py`): the transmitter keeps retrying one packet for up to 30 s
+Timing (`mtp/p2p.py`, QM/SRI/MRM): the transmitter keeps retrying one packet for up to 30 s
 (`SEND_TIMEOUT_S`) before it gives up, so a person walking between the boxes does
 not end the transfer. Once a transfer has started, the receiver gives up after
 35 s without a valid packet (`RECEIVE_TIMEOUT_S`) instead of waiting forever. After
 the last packet it keeps listening for 0.5 s, so a retransmitted last packet is
 still ACKed.
-
-Run the transciever,
-
-```sh
-$ python main.py
-```
 
 ## Bench test with the SP4 breakout (Raspberry Pi 3 A+)
 
@@ -97,7 +97,7 @@ venv in `.venv` inside the repo):
 ```sh
 $ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 $ ls /dev/spidev0.0
-$ .venv/bin/python -m unittest tests/test_transfer.py tests/test_usb.py
+$ .venv/bin/python -m unittest discover -s tests -t .     # all 50 tests, no radio needed
 ```
 
 Our Pis boot without a desktop, so a USB stick is not mounted on its own. `udisksctl` works on the Pi's
@@ -114,4 +114,4 @@ The transmitter sends the largest `.txt` at the top of `usb_device` (it skips `d
 files and macOS `._` files). The receiver writes `output.txt` into `usb_device` and replaces one that is there.
 
 Start the receiver first (the transmitter waits up to 30 s for the first ACK).
-Plain `python -m unittest` finds no tests: name the files as above.
+Run the tests with `discover -s tests -t .` as above, or one file: `python -m unittest tests/test_nmp.py`.

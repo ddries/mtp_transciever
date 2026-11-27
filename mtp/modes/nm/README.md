@@ -1,5 +1,11 @@
 # MTP-Protocol-NM — Network Mode
 
+> **Integrado en `mtp_transciever` (27-Nov-26).** Código importado de `sofiavaleero/MTP-Protocol-NM`
+> c77ce69 sin cambios de protocolo; solo importaciones relativas y la opción `--spi-hz` (4 MHz con los
+> cables de la placa SP4). Desde la raíz del repositorio: `python main.py --mode nm` (usa `config.json`:
+> `tx_rx_mode` `tx` = nodo origen con el archivo del USB) o, para pruebas, `python -m mtp.modes.nm.main …`
+> en lugar de `python main.py …` en los comandos de abajo. Pruebas: `python -m unittest tests/test_nmp.py`.
+
 Network Mode del proyecto académico **MTP Fall 2026**: distribuir un archivo de aproximadamente
 500 bytes entre Raspberry Pi con nRF24L01, mediante varios saltos y sin conocer la topología.
 Referencia: **NMP-1 v1.0, 15/11/2026**, el PDF del equipo. Python 3.10 o posterior.

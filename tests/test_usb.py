@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from usb import read_file_from_usb
+from mtp.usb import read_file_from_usb
 
 
 class ReadFileFromUsb(unittest.TestCase):

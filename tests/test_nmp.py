@@ -12,10 +12,10 @@ from contextlib import redirect_stderr
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from nmp import (ASK, BACKOFF, DATA, DONE, EXP, FRAME, GO, IDLE, RX, STATUS,
+from mtp.modes.nm.nmp import (ASK, BACKOFF, DATA, DONE, EXP, FRAME, GO, IDLE, RX, STATUS,
                  STOP, STOPPED, TX, FULL_MASK, MAX_FILE, Node, fragment,
                  pack_frame, reconstruct, unpack_frame)
-from radio import ADDRESS, NRF24Radio
+from mtp.modes.nm.radio import ADDRESS, NRF24Radio
 
 
 class Clock:
@@ -380,13 +380,13 @@ class NMPTests(unittest.TestCase):
             self.assertEqual(reconstruct(node.chunks), sample(500))
 
     def test_cli_source_stop_writes_and_closes_transport(self):
-        import main
+        from mtp.modes.nm import main
 
         with tempfile.TemporaryDirectory() as directory:
             source, output = Path(directory) / "source.bin", Path(directory) / "out.bin"
             source.write_bytes(sample(500))
             radio = FakeRadio(Clock())
-            with patch("main.UDPRadio", return_value=radio), patch("main.time.sleep", side_effect=KeyboardInterrupt):
+            with patch("mtp.modes.nm.main.UDPRadio", return_value=radio), patch("mtp.modes.nm.main.time.sleep", side_effect=KeyboardInterrupt):
                 result = main.main(["--radio", "udp", "--input", str(source), "--output", str(output), "--go"])
             self.assertEqual(result, 0)
             self.assertEqual(output.read_bytes(), sample(500))
@@ -416,7 +416,7 @@ class RadioTests(unittest.TestCase):
         return device, module
 
     def open_radio(self, module):
-        with patch("radio.sys.platform", "linux"), patch.dict("sys.modules", {"pyrf24": module}):
+        with patch("mtp.modes.nm.radio.sys.platform", "linux"), patch.dict("sys.modules", {"pyrf24": module}):
             return NRF24Radio(17, 10, "low")  # Valores de prueba, no cableado del proyecto.
 
     def test_nrf24_configuration_and_stopped_until_go(self):
@@ -448,7 +448,7 @@ class RadioTests(unittest.TestCase):
         self.assertIsNone(radio.tx_done())  # Cargar el FIFO no equivale a DONE.
         self.assertEqual(device.clear_status_flags.call_count, cleared)
         device.update.return_value = module.RF24_TX_DS
-        with patch("radio.time.monotonic", return_value=12.5):
+        with patch("mtp.modes.nm.radio.time.monotonic", return_value=12.5):
             node.poll()
         self.assertEqual(node.state, IDLE)
         self.assertTrue(radio.listening)
@@ -464,7 +464,7 @@ class RadioTests(unittest.TestCase):
         device.read.return_value = bytearray(pack_frame(STATUS, 0))
         self.assertIsNone(radio.receive())
         radio.listen()
-        with patch("radio.time.monotonic", return_value=3.25):
+        with patch("mtp.modes.nm.radio.time.monotonic", return_value=3.25):
             self.assertEqual(radio.receive(), (pack_frame(STATUS, 0), 3.25))
         device.read.assert_called_once_with(32)
         radio.close()
@@ -488,9 +488,9 @@ class RadioTests(unittest.TestCase):
         self.assertFalse(device.power)
 
     def test_cli_does_not_assume_hardware_pins_or_power(self):
-        import main
+        from mtp.modes.nm import main
 
-        with patch("main.NRF24Radio") as constructor, redirect_stderr(io.StringIO()):
+        with patch("mtp.modes.nm.main.NRF24Radio") as constructor, redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as exit_status:
                 main.main([])
         self.assertEqual(exit_status.exception.code, 2)

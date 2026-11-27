@@ -17,7 +17,7 @@ for name in ("RF24_PA_MIN", "RF24_PA_LOW", "RF24_PA_HIGH", "RF24_PA_MAX",
              "RF24_250KBPS", "RF24_1MBPS", "RF24_2MBPS"):
     setattr(driver, name, 0)
 with patch.dict(sys.modules, {"pyrf24": driver}):
-    import radio
+    from mtp import p2p as radio
 
 
 class PacketRadio:
