@@ -28,10 +28,54 @@ class Launcher(unittest.TestCase):
         path.write_text(json.dumps(values))
         return path
 
-    def launch(self, *argv):
-        with patch("main.run", return_value=True) as run:
+    def launch(self, *argv, stick_ok=True, run_result=True):
+        self.stick_calls = []
+
+        def stick(action):
+            self.stick_calls.append(action)
+            return stick_ok
+
+        with patch("main.run", side_effect=self.fake_run(run_result)) as run, \
+                patch("main.stick", side_effect=stick), patch.object(main.Path, "mkdir"):
             ok = main.main(list(argv))
         return ok, (run.call_args.args if run.called else None)
+
+    def fake_run(self, result):
+        def run(mode, config):
+            self.stick_calls.append("run")
+            if isinstance(result, BaseException):
+                raise result
+            return result
+        return run
+
+    def test_stick_mounted_before_and_unmounted_after(self):
+        box = str(self.config())
+        self.launch("--mode", "qm", "--role", "tx", "--config", box)
+        self.assertEqual(self.stick_calls, ["mount", "run", "umount"])
+        # also after a failed transfer, and after Ctrl+C
+        self.launch("--mode", "qm", "--role", "rx", "--config", box, run_result=False)
+        self.assertEqual(self.stick_calls, ["mount", "run", "umount"])
+        with self.assertRaises(KeyboardInterrupt):
+            self.launch("--mode", "nm", "--role", "rx", "--config", box, run_result=KeyboardInterrupt())
+        self.assertEqual(self.stick_calls, ["mount", "run", "umount"])
+
+    def test_no_stick_stops_before_the_radio(self):
+        ok, call = self.launch("--mode", "sri", "--role", "rx", "--config", str(self.config()),
+                               stick_ok=False)
+        self.assertFalse(ok)
+        self.assertIsNone(call)
+        self.assertEqual(self.stick_calls, ["mount"])
+
+    def test_keep_mounted_no_mount_and_other_folders(self):
+        box = str(self.config())
+        self.launch("--mode", "qm", "--role", "tx", "--config", box, "--keep-mounted")
+        self.assertEqual(self.stick_calls, ["mount", "run"])
+        self.launch("--mode", "qm", "--role", "tx", "--config", box, "--no-mount")
+        self.assertEqual(self.stick_calls, ["run"])
+        self.launch("--mode", "nm", "--role", "tx", "--config", box, "--usb", "/mnt/usb/nm")
+        self.assertEqual(self.stick_calls, ["mount", "run", "umount"])
+        self.launch("--mode", "qm", "--role", "tx", "--config", box, "--usb", "/tmp/stick")
+        self.assertEqual(self.stick_calls, ["run"])                  # not the stick: left alone
 
     def test_mode_files_are_valid_and_complete(self):
         for mode in ("qm", "sri", "mrm", "nm"):

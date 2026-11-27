@@ -11,6 +11,8 @@ The mode comes from --mode, else from "mode" in config.json, else qm.
 
 import argparse
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 from mtp.logger import log
@@ -18,6 +20,16 @@ from mtp.modes import MODES, run
 
 ROOT = Path(__file__).parent
 CONFIGS = ROOT / "configs"
+STICK_MOUNT = "/mnt/usb"
+
+
+def stick(action: str) -> bool:
+    """sudo teamc-stick mount|umount: the installed copy (no password where tools/install-stick.sh
+    ran), else the repo copy (sudo asks the password)."""
+    installed = "/usr/local/sbin/teamc-stick"
+    command = [installed] if shutil.which(installed) else ["bash", str(ROOT / "tools" / "teamc-stick")]
+    result = subprocess.run(["sudo", *command, action])
+    return result.returncode == 0
 
 
 def read_json(path: Path) -> dict:
@@ -34,6 +46,10 @@ def main(argv: list[str] | None = None) -> bool:
                         help="tx sends the stick's file (NM: source node); rx receives (NM: relay)")
     parser.add_argument("--usb", help="folder of the stick (default: usb_device in the mode's config)")
     parser.add_argument("--config", type=Path, help="per-box overrides (default: config.json if present)")
+    parser.add_argument("--no-mount", action="store_true",
+                        help="do not mount / unmount the stick (it is mounted by hand, or not under /mnt/usb)")
+    parser.add_argument("--keep-mounted", action="store_true",
+                        help="mount if needed, but leave the stick mounted at the end")
     parser.add_argument("--configs", type=Path, default=CONFIGS, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
@@ -72,7 +88,24 @@ def main(argv: list[str] | None = None) -> bool:
     overrides = sorted(set(box) - {"mode"})
     log(f"Initializing transceiver in {mode.upper()} mode as {config['tx_rx_mode'].upper()} "
         f"({mode_path.name}{', config.json overrides: ' + ', '.join(overrides) if overrides else ''})")
-    return run(mode, config)
+
+    # The stick: mounted before the mode, unmounted after it (also after a failure or Ctrl+C),
+    # so the routine is plug in -> run -> pull out.
+    usb = str(config.get("usb_device", ""))
+    manage = not args.no_mount and (usb == STICK_MOUNT or usb.startswith(STICK_MOUNT + "/"))
+    if manage:
+        if not stick("mount"):
+            log("No stick mounted: plug one in (or use --no-mount)")
+            return False
+        Path(usb).mkdir(parents=True, exist_ok=True)   # e.g. /mnt/usb/nm for NM
+    try:
+        return run(mode, config)
+    finally:
+        if manage and not args.keep_mounted:
+            if stick("umount"):
+                log("Stick unmounted: you can pull it out")
+            else:
+                log("WARNING: could not unmount the stick: run 'sudo teamc-stick umount' before pulling it")
 
 
 if __name__ == "__main__":

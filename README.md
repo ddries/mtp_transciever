@@ -153,14 +153,18 @@ $ sudo teamc-stick umount    # flush + unmount: then pull the stick
 
 Without the install: `sudo bash tools/teamc-stick mount` from the repo (asks the password).
 
-**A run**, receiver first:
+**A run**, receiver first: plug the stick in, run the mode, pull the stick out when it says so.
 
 ```sh
 $ cd ~/mtp_transciever
-$ sudo teamc-stick mount
 $ .venv/bin/python main.py --mode sri        # role from config.json, or --role tx|rx
-$ sudo teamc-stick umount
 ```
+
+`main.py` mounts the stick before the mode (`sudo teamc-stick mount`; no stick = it stops before the
+radio) and unmounts it afterwards, also after a failed transfer or Ctrl+C ("Stick unmounted: you can pull
+it out"). This applies when the stick folder is `/mnt/usb` or inside it (NM: `--usb /mnt/usb/nm`, created
+if missing). `--keep-mounted` leaves it mounted for the next run; `--no-mount` leaves the stick alone.
+Without `tools/install-stick.sh` on that box, sudo asks the password at the start.
 
 **WiFi off** (the rules ban the wireless chip in use; it also takes the box off the network): from the
 serial console, `sudo nmcli radio wifi off`. It stays off after a reboot. Back on: `sudo nmcli radio wifi on`.
