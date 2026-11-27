@@ -296,6 +296,28 @@ class NMPTests(unittest.TestCase):
         self.assertTrue(node.complete)
         self.assertEqual(reconstruct(node.chunks), data)
 
+    def test_stop_save_is_safe_against_pulling_the_stick(self):
+        # Team C: STOP escribe un temporal, fsync y rename; un fallo deja intacta la salida anterior.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output.txt"
+            output.write_bytes(b"previous copy")
+            node, _, _ = self.make_node(output=output)
+            self.receive(node, sample(500))
+            with patch("mtp.codec.os.fsync", side_effect=OSError("stick pulled")):
+                with self.assertRaises(OSError):
+                    node.handle(STOP)
+            self.assertEqual(output.read_bytes(), b"previous copy")
+            self.assertEqual(list(Path(directory).iterdir()), [output])  # sin temporales .mtp-*
+
+            node, _, _ = self.make_node(output=output)
+            self.receive(node, sample(500))
+            with patch("mtp.codec.os.fsync") as fsync, patch("mtp.modes.nm.nmp.os.sync") as sync:
+                node.handle(STOP)
+            fsync.assert_called_once()
+            sync.assert_called_once()
+            self.assertEqual(output.read_bytes(), sample(500))
+            self.assertEqual(list(Path(directory).iterdir()), [output])
+
     def test_stop_output_and_go_reset(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "copy.bin"

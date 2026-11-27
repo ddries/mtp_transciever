@@ -1,11 +1,14 @@
 """NMP-1: formato binario y máquina de estados (secciones 4 a 9 del PDF)."""
 
 import logging
+import os
 import random
 import struct
 import time
 import zlib
 from pathlib import Path
+
+from ...codec import save_payload
 
 HEADER = struct.Struct("<HI")
 FRAME = struct.Struct("<BI27s")
@@ -162,7 +165,10 @@ class Node:
         if event == STOP and self.state != STOPPED:
             try:
                 if self.complete and self.output is not None:
-                    self.output.write_bytes(reconstruct(self.chunks))
+                    # Seguro si se extrae el USB justo después de STOP: temporal en la misma carpeta,
+                    # fsync, rename sobre la salida y sync (como QM/SRI/MRM). Un fallo deja la salida anterior.
+                    save_payload(self.output, reconstruct(self.chunks), compressed=False)
+                    os.sync()
                     logging.info("Archivo guardado en %s", self.output)
                 elif not self.complete:
                     logging.warning("STOP: recepción incompleta; no se escribe el archivo")
