@@ -3,7 +3,7 @@
 #
 #   sudo teamc-stick mount     find the stick, mount it at /mnt/usb, owned by the calling user
 #   sudo teamc-stick umount    flush and unmount: then the stick can be pulled
-#   teamc-stick status         what is plugged in and what is mounted (no sudo needed)
+#   sudo teamc-stick status    what is plugged in and what is mounted (/usr/local/sbin is in sudo's PATH only)
 #
 # Handles sticks with a partition table (/dev/sda1) and without one (file system on /dev/sda).
 # Installed by tools/install-stick.sh as /usr/local/sbin/teamc-stick with a sudo rule, so on

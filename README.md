@@ -125,3 +125,43 @@ files and macOS `._` files). The receiver writes `output.txt` into `usb_device` 
 
 Start the receiver first (the transmitter waits up to 30 s for the first ACK).
 Run the tests with `discover -s tests -t .` as above, or one file: `python -m unittest tests/test_nmp.py`.
+
+## Competition day: serial console, stick, WiFi off
+
+**Serial console (no network needed).** A CP2102 USB-UART module, 3.3 V logic:
+
+| CP2102 | Pi header |
+|---|---|
+| GND | pin 9 (GND; pin 6 already carries the breakout's GND) |
+| TXD | pin 10 (GPIO 15, RXD) |
+| RXD | pin 8 (GPIO 14, TXD) |
+| 3V3 / 5V | **not connected** (the Pi has its own supply) |
+
+On the laptop it appears as "Silicon Labs CP210x (COMn)" in Device Manager (Windows) or `/dev/ttyUSB0`
+(Linux). Open it at **115200 8N1, no flow control** (PuTTY: Connection type Serial), press Enter and log
+in as the box's user. Kernel messages (e.g. a stick being plugged in) also appear there; `sudo dmesg -n 1`
+silences them until the next boot.
+
+**The stick.** `tools/install-stick.sh` (once, with sudo) installs `teamc-stick` with a sudo rule that
+asks no password for it; then:
+
+```sh
+$ sudo teamc-stick mount     # finds the stick (sda1, or sda without a partition table), mounts /mnt/usb
+$ sudo teamc-stick status
+$ sudo teamc-stick umount    # flush + unmount: then pull the stick
+```
+
+Without the install: `sudo bash tools/teamc-stick mount` from the repo (asks the password).
+
+**A run**, receiver first:
+
+```sh
+$ cd ~/mtp_transciever
+$ sudo teamc-stick mount
+$ .venv/bin/python main.py --mode sri        # role from config.json, or --role tx|rx
+$ sudo teamc-stick umount
+```
+
+**WiFi off** (the rules ban the wireless chip in use; it also takes the box off the network): from the
+serial console, `sudo nmcli radio wifi off`. It stays off after a reboot. Back on: `sudo nmcli radio wifi on`.
+Doing it over SSH cuts your own session.
