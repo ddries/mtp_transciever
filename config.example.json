@@ -3,5 +3,8 @@
     "tx_rx_mode": "tx",
     "address": "1Node",
     "channel": 76,
-    "compression": true
+    "compression": true,
+    "pa_level": "min",
+    "data_rate": "250k",
+    "spi_hz": 4000000
 }

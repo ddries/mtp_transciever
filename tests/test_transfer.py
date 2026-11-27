@@ -12,7 +12,9 @@ from unittest.mock import patch
 # The RF24 extension requires board hardware. Only its import is stubbed.
 driver = types.ModuleType("pyrf24")
 driver.RF24 = object
-driver.RF24_PA_LOW = driver.RF24_1MBPS = 0
+for name in ("RF24_PA_MIN", "RF24_PA_LOW", "RF24_PA_HIGH", "RF24_PA_MAX",
+             "RF24_250KBPS", "RF24_1MBPS", "RF24_2MBPS"):
+    setattr(driver, name, 0)
 with patch.dict(sys.modules, {"pyrf24": driver}):
     import radio
 
