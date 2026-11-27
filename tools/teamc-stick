@@ -1,0 +1,62 @@
+#!/bin/bash
+# teamc-stick: mount / unmount the USB stick at /mnt/usb for the transceiver.
+#
+#   sudo teamc-stick mount     find the stick, mount it at /mnt/usb, owned by the calling user
+#   sudo teamc-stick umount    flush and unmount: then the stick can be pulled
+#   teamc-stick status         what is plugged in and what is mounted (no sudo needed)
+#
+# Handles sticks with a partition table (/dev/sda1) and without one (file system on /dev/sda).
+# Installed by tools/install-stick.sh as /usr/local/sbin/teamc-stick with a sudo rule, so on
+# competition day "sudo teamc-stick mount" asks no password.
+set -euo pipefail
+MNT=/mnt/usb
+
+usb_devices() {  # every USB disk: its first partition with a file system, else the disk itself
+  local disk part
+  for disk in $(lsblk -dn -o NAME,TRAN | awk '$2 == "usb" {print $1}'); do
+    part=$(lsblk -ln -o NAME,TYPE,FSTYPE "/dev/$disk" | awk '$2 == "part" && $3 != "" {print $1; exit}')
+    if [ -n "$part" ]; then echo "/dev/$part"
+    elif [ -n "$(lsblk -dn -o FSTYPE "/dev/$disk")" ]; then echo "/dev/$disk"
+    fi
+  done
+}
+
+need_root() { [ "$(id -u)" = 0 ] || { echo "run it with sudo: sudo teamc-stick $1"; exit 1; }; }
+
+case "${1:-status}" in
+  mount)
+    need_root mount
+    if mountpoint -q "$MNT"; then
+      echo "already mounted: $(findmnt -n -o SOURCE "$MNT") on $MNT"; exit 0
+    fi
+    mapfile -t devices < <(usb_devices)
+    if [ "${#devices[@]}" = 0 ]; then echo "no USB stick with a file system found (lsblk)"; exit 1; fi
+    if [ "${#devices[@]}" -gt 1 ]; then echo "more than one USB stick (${devices[*]}): leave one plugged in"; exit 1; fi
+    dev=${devices[0]}
+    fstype=$(lsblk -dn -o FSTYPE "$dev")
+    owner=${SUDO_UID:-0}; group=${SUDO_GID:-0}
+    case $fstype in
+      vfat)        opts="uid=$owner,gid=$group,umask=022,flush" ;;   # flush: write out soon, stick may be pulled
+      exfat)       opts="uid=$owner,gid=$group,umask=022" ;;
+      ntfs|ntfs3)  opts="uid=$owner,gid=$group,umask=022"; fstype=ntfs3 ;;
+      *)           opts="defaults" ;;                                # ext4 etc.: owners come from the disk
+    esac
+    mkdir -p "$MNT"
+    mount -t "$fstype" -o "$opts" "$dev" "$MNT"
+    echo "mounted $dev ($fstype, label '$(lsblk -dn -o LABEL "$dev")') on $MNT"
+    ls -A "$MNT" | head -20
+    ;;
+  umount|unmount)
+    need_root umount
+    if ! mountpoint -q "$MNT"; then echo "nothing mounted on $MNT: you can pull the stick"; exit 0; fi
+    sync
+    umount "$MNT"
+    echo "unmounted $MNT: you can pull the stick"
+    ;;
+  status)
+    echo "USB sticks: $(usb_devices | tr '\n' ' ')"
+    if mountpoint -q "$MNT"; then findmnt -n -o SOURCE,FSTYPE,TARGET "$MNT"; else echo "nothing mounted on $MNT"; fi
+    ;;
+  *)
+    echo "usage: teamc-stick mount|umount|status"; exit 2 ;;
+esac
