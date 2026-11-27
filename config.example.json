@@ -1,8 +1,3 @@
 {
-    "mode": "qm",
-    "usb_device": "/mnt/usb",
-    "tx_rx_mode": "tx",
-    "address": "1Node",
-    "compression": true,
-    "spi_hz": 4000000
+    "tx_rx_mode": "tx"
 }

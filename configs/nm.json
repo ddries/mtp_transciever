@@ -1,0 +1,6 @@
+{
+    "mode": "nm",
+    "usb_device": "/mnt/usb",
+    "pa_level": "min",
+    "spi_hz": 4000000
+}

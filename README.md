@@ -4,15 +4,20 @@ MTP F26 Team C: one program for every competition mode, on a Raspberry Pi 3 A+ w
 E01-ML01SP4 (nRF24L01+ with PA/LNA) on the SP4 breakout. Python 3.13 on the Pi (3.11 or newer).
 
 ```sh
-$ python main.py                 # mode from config.json ("mode", default qm)
-$ python main.py --mode nm       # or choose it on the command line
+$ .venv/bin/python main.py --mode sri --role rx     # receiving box: start it first
+$ .venv/bin/python main.py --mode sri --role tx     # sending box
+$ .venv/bin/python main.py --mode nm --role tx      # NM source node (relays: --role rx); Ctrl+C = STOP
 ```
+
+Each mode's settings are in `configs/<mode>.json`, the same on every box, so nothing needs editing
+between runs: choose the mode and this box's role. `--usb /some/folder` uses another stick folder.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `main.py` | Launcher: reads `config.json`, picks the mode, runs it |
+| `main.py` | Launcher: `configs/<mode>.json` + optional `config.json` + `--role`/`--usb`, then runs the mode |
+| `configs/qm.json`, `sri.json`, `mrm.json`, `nm.json` | Settings of each mode (stick folder, address, radio) |
 | `mtp/hardware.py` | How the breakout is wired (CE GPIO 22, CSN spidev0.0), SPI speed, legal PA level |
 | `mtp/usb.py` | Picks the file to send on the stick (largest `.txt`, skips Windows/macOS leftovers) |
 | `mtp/codec.py` | zlib stream out, checked inflate and safe save of `output.txt` |
@@ -32,18 +37,23 @@ To add or change a mode, edit its file in `mtp/modes/`; shared code stays in `mt
 
 ## Configuration
 
-Install the libraries (`python -m pip install -r requirements.txt`), copy `config.example.json` to
-`config.json` and fill it in:
+Install the libraries (`python -m pip install -r requirements.txt`). Settings are merged, later wins:
+
+1. `configs/<mode>.json`: the mode's settings, in git, the same on both boxes. Change them here.
+2. `config.json` (optional, not in git): overrides for one box only, e.g. `{"tx_rx_mode": "tx"}` as
+   its usual role (see `config.example.json`), or a test channel. Keep it small: everything in it beats
+   the mode file.
+3. `--role tx|rx` and `--usb PATH` on the command line.
 
 | Key | Meaning |
 |---|---|
-| `mode` | `qm`, `sri`, `mrm` or `nm` (default `qm`); `--mode` overrides it |
+| `mode` | `qm`, `sri`, `mrm` or `nm`; `--mode` chooses it (else `mode` in `config.json`, else `qm`) |
 | `usb_device` | The stick's folder: `/mnt/usb` on our Pis, `E:/` on Windows, `/Volumes/<name>` on macOS |
-| `tx_rx_mode` | `tx` sends the stick's file (in NM: the source node); `rx` receives (in NM: a relay node) |
-| `address` | QM/SRI/MRM: the 5-character link address, the same on both boxes (NM has its own) |
+| `tx_rx_mode` | `tx` sends the stick's file (in NM: the source node); `rx` receives (in NM: a relay node). Usually `--role` |
+| `address` | QM/SRI/MRM: the 5-character link address, the same on both boxes (NM has its own). `TeamC`, not pyrf24's example `1Node`, which other teams may use too |
 | `compression` | `true` (default) or `false`, a JSON boolean |
 | `spi_hz` | SPI clock, default 4000000 (pyrf24's own 10 MHz is too fast for jumper wires) |
-| `channel`, `data_rate`, `pa_level` | Optional overrides of the mode's profile (QM/SRI/MRM; NM takes only `pa_level`). Channel 0-83, `250k`/`1m`/`2m`, `min`/`low`/`high`/`max`. With the SP4 only `min` stays under 10 mW e.i.r.p. on a fixed channel; the others are for a pigtail into an attenuator only. Both boxes must match |
+| `channel`, `data_rate`, `pa_level` | The radio profile, in the mode files (QM/SRI/MRM; NM takes only `pa_level`). Channel 0-83, `250k`/`1m`/`2m`, `min`/`low`/`high`/`max`. With the SP4 only `min` stays under 10 mW e.i.r.p. on a fixed channel; the others are for a pigtail into an attenuator only. Both boxes must match |
 
 In RX mode the received file is saved as `output.txt` in the USB device. In NM every node writes
 `output.txt` at STOP (Ctrl+C or SIGTERM) if its copy is complete and its CRC-32 checks.

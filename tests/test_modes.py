@@ -28,24 +28,54 @@ class Launcher(unittest.TestCase):
         path.write_text(json.dumps(values))
         return path
 
-    def test_mode_from_config_and_cli_override(self):
-        path = self.config(mode="sri")
+    def launch(self, *argv):
         with patch("main.run", return_value=True) as run:
-            self.assertTrue(main.main(["--config", str(path)]))
-            run.assert_called_once_with("sri", {"mode": "sri"})
-            main.main(["--config", str(path), "--mode", "nm"])
-            self.assertEqual(run.call_args.args[0], "nm")
+            ok = main.main(list(argv))
+        return ok, (run.call_args.args if run.called else None)
+
+    def test_mode_files_are_valid_and_complete(self):
+        for mode in ("qm", "sri", "mrm", "nm"):
+            with self.subTest(mode=mode):
+                config = json.loads((main.CONFIGS / f"{mode}.json").read_text())
+                self.assertEqual(config["mode"], mode)
+                self.assertEqual(config["usb_device"], "/mnt/usb")
+                self.assertEqual(config["pa_level"], "min")      # 10 mW e.i.r.p. on a fixed channel
+                self.assertNotIn("tx_rx_mode", config)           # the role belongs to the box
+        for mode in ("qm", "sri", "mrm"):
+            config = json.loads((main.CONFIGS / f"{mode}.json").read_text())
+            self.assertEqual((config["channel"], config["data_rate"], config["address"]),
+                             (74, "250k", "TeamC"))
+
+    def test_mode_file_plus_role(self):
+        ok, (mode, config) = self.launch("--mode", "sri", "--role", "rx",
+                                         "--config", str(self.config()))
+        self.assertTrue(ok)
+        self.assertEqual(mode, "sri")
+        self.assertEqual((config["tx_rx_mode"], config["channel"], config["address"]), ("rx", 74, "TeamC"))
+
+    def test_box_config_overrides_mode_file_and_cli_overrides_box(self):
+        box = self.config(mode="nm", tx_rx_mode="tx", channel=76)
+        ok, (mode, config) = self.launch("--config", str(box))
+        self.assertEqual((mode, config["tx_rx_mode"]), ("nm", "tx"))
+        ok, (mode, config) = self.launch("--config", str(box), "--mode", "qm", "--role", "rx",
+                                         "--usb", "/tmp/stick")
+        self.assertEqual((mode, config["tx_rx_mode"], config["channel"], config["usb_device"]),
+                         ("qm", "rx", 76, "/tmp/stick"))
 
     def test_default_mode_is_qm(self):
-        with patch("main.run", return_value=True) as run:
-            main.main(["--config", str(self.config())])
-        self.assertEqual(run.call_args.args[0], "qm")
+        ok, (mode, _) = self.launch("--role", "tx", "--config", str(self.config()))
+        self.assertEqual(mode, "qm")
 
-    def test_unknown_mode_or_missing_config_fails(self):
-        with patch("main.run") as run:
-            self.assertFalse(main.main(["--config", str(self.config(mode="xx"))]))
-            self.assertFalse(main.main(["--config", "/nonexistent/config.json"]))
-        run.assert_not_called()
+    def test_missing_role_unknown_mode_or_bad_files_fail(self):
+        empty = str(self.config())
+        for argv in (["--config", empty],                                 # no role anywhere
+                     ["--role", "tx", "--config", str(self.config(mode="xx"))],
+                     ["--role", "tx", "--config", "/nonexistent/config.json"],
+                     ["--role", "tx", "--config", empty, "--configs", "/nonexistent"]):
+            with self.subTest(argv=argv):
+                ok, call = self.launch(*argv)
+                self.assertFalse(ok)
+                self.assertIsNone(call)
 
 
 class PointToPointModes(unittest.TestCase):
