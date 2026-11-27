@@ -3,6 +3,15 @@ from pathlib import Path
 # Files that macOS and Windows leave on a stick: ".DS_Store", "._x", Office lock files "~$x",
 # Word temp files "~WRLxxxx.tmp", "desktop.ini", "Thumbs.db".
 SYSTEM_FILES = ("desktop.ini", "thumbs.db")
+DEFAULT_OUTPUT = "output.txt"
+
+
+def output_path(dev: str, name: str | None = None) -> Path | None:
+    """Where the receiver writes: <stick>/<name>, a plain file name (default output.txt)."""
+    name = name or DEFAULT_OUTPUT
+    if "/" in name or "\\" in name or name in (".", "..") or name.startswith("."):
+        return None
+    return Path(dev) / name
 
 def read_file_from_usb(dev: str) -> Path | None:
     path = Path(dev)

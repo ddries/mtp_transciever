@@ -106,6 +106,11 @@ class Launcher(unittest.TestCase):
         self.assertEqual((mode, config["tx_rx_mode"], config["channel"], config["usb_device"]),
                          ("qm", "rx", 76, "/tmp/stick"))
 
+    def test_out_names_the_received_file(self):
+        ok, (mode, config) = self.launch("--mode", "sri", "--role", "rx", "--out", "test_sri.txt",
+                                         "--config", str(self.config()))
+        self.assertEqual(config["output_name"], "test_sri.txt")
+
     def test_default_mode_is_qm(self):
         ok, (mode, _) = self.launch("--role", "tx", "--config", str(self.config()))
         self.assertEqual(mode, "qm")
@@ -138,6 +143,19 @@ class PointToPointModes(unittest.TestCase):
             with self.subTest(mode=module.__name__):
                 self.assertEqual(self.run_mode(module), ("1Node", 74, "min", "250k", 4_000_000))
 
+    def test_receiver_writes_the_named_file(self):
+        stick = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        config = {"usb_device": str(stick), "tx_rx_mode": "rx", "address": "1Node"}
+        for name, expected in ((None, "output.txt"), ("test_sri.txt", "test_sri.txt")):
+            with self.subTest(name=name), patch.object(p2p, "setup_radio", return_value=Mock()), \
+                    patch.object(p2p, "receive_file", return_value=True) as receive:
+                self.assertTrue(sri.run({**config, **({"output_name": name} if name else {})}))
+                self.assertEqual(receive.call_args.args[1], stick / expected)
+        for bad in ("../x.txt", "a/b.txt", ".hidden", ".."):
+            with self.subTest(bad=bad), patch.object(p2p, "setup_radio") as setup:
+                self.assertFalse(sri.run({**config, "output_name": bad}))
+                setup.assert_not_called()
+
     def test_config_overrides_profile(self):
         args = self.run_mode(qm, channel=76, data_rate="1m", spi_hz=8_000_000)
         self.assertEqual(args, ("1Node", 76, "min", "1m", 8_000_000))
@@ -164,6 +182,12 @@ class NetworkMode(unittest.TestCase):
         argv = nm.arguments({"usb_device": str(stick), "tx_rx_mode": "rx"})
         self.assertEqual(argv, ["--radio", "nrf24", "--ce", "22", "--csn", "0", "--pa", "min",
                                 "--spi-hz", "4000000", "--output", str(stick / "output.txt"), "--go"])
+
+    def test_nm_output_name(self):
+        stick = self.stick()
+        argv = nm.arguments({"usb_device": str(stick), "tx_rx_mode": "rx", "output_name": "test_nm.txt"})
+        self.assertEqual(argv[argv.index("--output") + 1], str(stick / "test_nm.txt"))
+        self.assertIsNone(nm.arguments({"usb_device": str(stick), "output_name": "../x.txt"}))
 
     def test_source_node_sends_the_stick_file(self):
         stick = self.stick(**{"desktop.ini": b"x", "nm.txt": b"hello"})

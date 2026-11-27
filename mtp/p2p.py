@@ -13,7 +13,7 @@ from pyrf24 import (RF24, RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX,
 from .codec import encode_payload, save_payload
 from .hardware import CE_PIN, CSN_PIN, DEFAULT_SPI_HZ, LEGAL_FIXED_CHANNEL_PA, MAX_CHANNEL
 from .logger import log
-from .usb import read_file_from_usb
+from .usb import output_path, read_file_from_usb
 
 # Timing. The radio ACKs each packet in hardware (15 retries, 1.5 ms apart); on top of that the
 # transmitter keeps trying one packet until SEND_TIMEOUT_S, so a person walking between the boxes
@@ -206,7 +206,10 @@ def run(config: dict, profile: dict, name: str) -> bool:
             return False
         log(f"Successfully read file {file.name} ({file.stat().st_size} bytes)")
     else:
-        file = Path(usb_device) / "output.txt"
+        file = output_path(usb_device, config.get("output_name"))
+        if file is None:
+            log("output_name must be a plain file name, e.g. test_sri.txt")
+            return False
 
     radio = setup_radio(address, channel, pa_level, data_rate, spi_hz)
     if not radio:

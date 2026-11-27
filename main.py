@@ -1,6 +1,6 @@
 """Team C transceiver.
 
-    python main.py --mode qm|sri|mrm|nm --role tx|rx [--usb PATH] [--config FILE]
+    python main.py --mode qm|sri|mrm|nm --role tx|rx [--usb PATH] [--out NAME] [--config FILE]
 
 Settings are merged in this order, later wins:
   1. configs/<mode>.json  - the mode's settings (in git, the same on every box)
@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> bool:
     parser.add_argument("--role", choices=("tx", "rx"),
                         help="tx sends the stick's file (NM: source node); rx receives (NM: relay)")
     parser.add_argument("--usb", help="folder of the stick (default: usb_device in the mode's config)")
+    parser.add_argument("--out", metavar="NAME",
+                        help="file name the receiver writes on the stick (default output.txt), e.g. test_sri.txt")
     parser.add_argument("--config", type=Path, help="per-box overrides (default: config.json if present)")
     parser.add_argument("--no-mount", action="store_true",
                         help="do not mount / unmount the stick (it is mounted by hand, or not under /mnt/usb)")
@@ -80,6 +82,8 @@ def main(argv: list[str] | None = None) -> bool:
         config["tx_rx_mode"] = args.role
     if args.usb:
         config["usb_device"] = args.usb
+    if args.out:
+        config["output_name"] = args.out
 
     if config.get("tx_rx_mode") not in ("tx", "rx"):
         log("Say which role this box has: --role tx or --role rx")

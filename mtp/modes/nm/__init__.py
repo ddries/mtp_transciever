@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ...hardware import CE_PIN, CSN_PIN, DEFAULT_SPI_HZ, LEGAL_FIXED_CHANNEL_PA, PA_NAMES
 from ...logger import log
-from ...usb import read_file_from_usb
+from ...usb import output_path, read_file_from_usb
 
 
 def arguments(config: dict) -> list[str] | None:
@@ -27,9 +27,14 @@ def arguments(config: dict) -> list[str] | None:
     if pa_level != LEGAL_FIXED_CHANNEL_PA:
         log(f"WARNING: NM pa_level {pa_level} is over 10 mW e.i.r.p. on its fixed channel")
 
+    output = output_path(usb_device, config.get("output_name"))
+    if output is None:
+        log("output_name must be a plain file name, e.g. test_nm.txt")
+        return None
+
     argv = ["--radio", "nrf24", "--ce", str(CE_PIN), "--csn", str(CSN_PIN), "--pa", pa_level,
             "--spi-hz", str(config.get("spi_hz", DEFAULT_SPI_HZ)),
-            "--output", str(Path(usb_device) / "output.txt"), "--go"]
+            "--output", str(output), "--go"]
     if config.get("tx_rx_mode") == "tx":
         file = read_file_from_usb(usb_device)
         if not file:
